@@ -67,6 +67,19 @@ def SetCommand(accelCommand: npt.NDArray, angAccelCommand: npt.NDArray) -> None:
 
 import copy
 from PIL import Image
+from pathlib import Path
+
+
+"""
+Get angular velocity from two quaternions representing the orientation of 
+an object at time (t0) and (t0 + dt). Assumes scalar-last quaternions.
+"""
+def AngVelFromQuats(q1: npt.NDArray, q2: npt.NDArray, dt: float):
+    return (2.0 / dt) * np.array([
+        q1[3]*q2[0] - q1[0]*q2[3] - q1[1]*q2[2] + q1[2]*q2[1],
+        q1[3]*q2[1] + q1[0]*q2[2] - q1[1]*q2[3] - q1[2]*q2[0],
+        q1[3]*q2[2] - q1[0]*q2[1] + q1[1]*q2[0] - q1[2]*q2[3]])
+
 
 ###############################
 # Get initial simulation time #
@@ -111,10 +124,10 @@ while not exit_flag:
     # Example for getting additional vehicle properties #
     #####################################################
 
-    mass = shuttle.getMass()
-    inertiaBodyFrame = shuttle.getInertiaTensor(shuttleFrame)
-    damage: float = shuttle.GetParam(st.VarType.double, ["Stats", "Damage"])
-    fuelUsed: float = shuttle.GetParam(st.VarType.double, ["Stats", "FuelUsed"])
+    # mass = shuttle.getMass()
+    # inertiaBodyFrame = shuttle.getInertiaTensor(shuttleFrame)
+    # damage: float = shuttle.GetParam(st.VarType.double, ["Stats", "Damage"])
+    # fuelUsed: float = shuttle.GetParam(st.VarType.double, ["Stats", "FuelUsed"])
 
     ##################################################################
     # Example for rotating the top camera 30 deg left and 10 deg up, #
@@ -143,6 +156,14 @@ while not exit_flag:
             imageB = np.asarray(image.as_RGB8().PixelsB).reshape((cameraParams.ResolutionX, cameraParams.ResolutionY))
             imageRGB = Image.fromarray(np.dstack((imageR, imageG, imageB)).astype(np.uint8))
 
+            # OPTIONAL: SAVE THE IMAGE TO DISK FOR VIEWING
+
+            # savePath = os.path.join(st.path_utils.GetLocalOutputDir(), "STU4")
+            # os.makedirs(savePath, exist_ok=True)
+            # imageName = f"TestImage{str(imageNumber).zfill(4)}.png"
+            # imageRGB.save(os.path.join(savePath, imageName))
+
+            # st.OnScreenLogMessage(f"Saved camera capture to {os.path.join(savePath, imageName)}", "CameraCapture", st.Severity.Info)
             imageNumber += 1
         else:
             st.OnScreenLogMessage("Failed to capture camera image :(", "CameraNoCapture", st.Severity.Info)
@@ -152,21 +173,76 @@ while not exit_flag:
     # of the nearest 4 pieces of debris and printing the distance to the closest one. #
     ###################################################################################
 
-    debrisInfo = GetNearestDebrisLocations(4)
-    if len(debrisInfo) > 0:
-        closestDebris = debrisInfo[0]
-        closestDebris_loc = closestDebris[0, :]
-        closestDebris_closestPoint = closestDebris[1, 0]
-        closestDebris_rangeRate = closestDebris[1, 1]
-        closestDebris_diameter = closestDebris[1, 2]
-        st.OnScreenLogMessage(f"Nearest debris: {np.linalg.norm(closestDebris_loc):.1f} m", "UserAPIPrintout", st.Severity.Info)
+    # debrisInfo = GetNearestDebrisLocations(4)
+    # if len(debrisInfo) > 0:
+    #     closestDebris = debrisInfo[0]
+    #     closestDebris_loc = closestDebris[0, :]
+    #     closestDebris_closestPoint = closestDebris[1, 0]
+    #     closestDebris_rangeRate = closestDebris[1, 1]
+    #     closestDebris_diameter = closestDebris[1, 2]
+    #     st.OnScreenLogMessage(f"Nearest debris: {np.linalg.norm(closestDebris_loc):.1f} m", 
+    #                           "UserAPIPrintout", st.Severity.Info)
 
-    ##################################
-    # YOUR CONTROLLER CODE GOES HERE #
-    ##################################
+    ####################################################
+    # Example for commanding a beeline acceleration    #
+    # toward the target (and facing it the entire way) #
+    ####################################################
 
-    linearAcceleration_m_s2 = np.zeros(3)
-    angularAcceleration_rad_s2 = np.zeros(3)
+    # Gains
+    accel_gain: float = 1.0
+    angvel_gain: float = 0.2
+    kp_pitch = 2.0
+    kp_yaw = 2.0
+    kp_roll = 2.0
+
+    # Translational control
+    targetState: st.frames.FramedLocVelAcc = target.getLocVelAcc()
+    targetLoc: npt.NDArray = targetState.loc_WRT_ExprIn(phobosFrame)
+    targetVel: npt.NDArray = targetState.vel_WRT_ExprIn(phobosFrame)
+
+    goalDirection: npt.NDArray = (targetLoc - loc) / np.linalg.norm(targetLoc - loc)
+    goalSpeed_m_s: float = 10.0  # just keep accelerating
+    goalVelocity: npt.NDArray = goalSpeed_m_s * goalDirection
+
+    linearAcceleration_m_s2 = accel_gain * (goalVelocity - vel)
+    linearAcceleration_m_s2 = st.frames.FramedVector(linearAcceleration_m_s2, phobosFrame).ExprIn(shuttleFrame)
+
+    # Rotational control
+    # Align shuttle x-axis to target and shuttle y-axis to Phobos y-axis
+    x_hat = copy.deepcopy(goalDirection)
+    y_hat = np.array([0.0, -1.0, 0.0])
+    z_hat = np.cross(x_hat, y_hat)
+    z_hat = z_hat / np.linalg.norm(z_hat)
+    T_shuttlePhobos = np.vstack((x_hat, y_hat, z_hat))
+    q_shuttlePhobos = st.math.DCM_to_Quat(T_shuttlePhobos)
+
+    desired_AngVel = np.zeros(3)
+    if angvel_gain != 0.0:
+        desired_AngVel = AngVelFromQuats(rot, q_shuttlePhobos, 1.0 / angvel_gain)
+    desired_AngVel = st.frames.FramedAngVel(desired_AngVel, phobosFrame).WRT(phobosFrame).ExprIn(shuttleFrame)
+
+    desired_AngVel_x = desired_AngVel[0]
+    desired_AngVel_y = desired_AngVel[1]
+    desired_AngVel_z = desired_AngVel[2]
+
+    # get current angular velocity values
+    current_AngVel = shuttle.getAngVelocity().WRT(phobosFrame).ExprIn(shuttleFrame)
+    current_AngVel_x: float = current_AngVel[0]
+    current_AngVel_y: float = current_AngVel[1]
+    current_AngVel_z: float = current_AngVel[2]
+
+    # calculate angular velocity error
+    AngVel_error_x = desired_AngVel_x - current_AngVel_x
+    AngVel_error_y = desired_AngVel_y - current_AngVel_y
+    AngVel_error_z = desired_AngVel_z - current_AngVel_z
+
+    strength_torque = shuttle.GetParam(st.VarType.double, ["Thrusters", "TorqueStrength_Nm"])
+    torque_x = kp_roll * AngVel_error_x * strength_torque
+    torque_y = kp_pitch * AngVel_error_y * strength_torque
+    torque_z = kp_yaw * AngVel_error_z * strength_torque
+
+    torque_Nm = np.array([torque_x, torque_y, torque_z])
+    angularAcceleration_rad_s2 = np.linalg.inv(shuttle.getInertiaTensor(shuttleFrame)) @ torque_Nm
 
     # Send acceleration and angular acceleration commands
     SetCommand(linearAcceleration_m_s2, angularAcceleration_rad_s2)
