@@ -1,0 +1,13 @@
+BASELINE SIMULATION
+Date: 11/01/2026 17:01:40
+Run: 261101_105610_COMPETITION_SIM__ba4
+
+Previous simulation results:
+Flight duration: 94.41 seconds
+Distance to ship: 816.1 m
+Total damage: 335856.51 J
+TNT damage: 0.080 kg
+Fuel used: 1.15 kg
+Score: -333.7
+
+No collision avoidance implemented.

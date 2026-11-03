@@ -37,7 +37,7 @@ def GetNearestDebrisLocations(N: int) -> list[npt.NDArray]:
     allDebrisInfo: list[npt.NDArray] = shuttle.GetParamArray(st.VarType.doubleM3x3, 
                                                             ["Radar", "SortedDebrisData"])
     nearest = allDebrisInfo[:min(N, len(allDebrisInfo))]
-    return nearest
+    return nearest ##Reads radar observations
 
 
 def PanTiltCamera(camera: st.Entity, yaw_deg: float, pitch_deg: float) -> None:
@@ -47,12 +47,12 @@ def PanTiltCamera(camera: st.Entity, yaw_deg: float, pitch_deg: float) -> None:
     elif camera == bottomCamera:
         yaw_deg = np.clip(yaw_deg, -89.0, 89.0)
         pitch_deg = np.clip(pitch_deg, 0.0, 50.0)
-    camera.setRotation_DCM(st.math.Euler321_to_DCM([np.deg2rad(yaw_deg), np.deg2rad(pitch_deg), 0.0]), shuttleFrame)
+    camera.setRotation_DCM(st.math.Euler321_to_DCM([np.deg2rad(yaw_deg), np.deg2rad(pitch_deg), 0.0]), shuttleFrame) ##Controls camera orientation
 
 
 def SetCommand(accelCommand: npt.NDArray, angAccelCommand: npt.NDArray) -> None:
     shuttle.SetParam(st.VarType.doubleV3, ["JetSelection", "CommandedAccel"], accelCommand)
-    shuttle.SetParam(st.VarType.doubleV3, ["JetSelection", "CommandedAngAccel"], angAccelCommand)
+    shuttle.SetParam(st.VarType.doubleV3, ["JetSelection", "CommandedAngAccel"], angAccelCommand) ##Sends translational and angular acceleration commands
 
 
 #############################################################################################
@@ -78,7 +78,7 @@ def AngVelFromQuats(q1: npt.NDArray, q2: npt.NDArray, dt: float):
     return (2.0 / dt) * np.array([
         q1[3]*q2[0] - q1[0]*q2[3] - q1[1]*q2[2] + q1[2]*q2[1],
         q1[3]*q2[1] + q1[0]*q2[2] - q1[1]*q2[3] - q1[2]*q2[0],
-        q1[3]*q2[2] - q1[0]*q2[1] + q1[1]*q2[0] - q1[2]*q2[3]])
+        q1[3]*q2[2] - q1[0]*q2[1] + q1[1]*q2[0] - q1[2]*q2[3]]) ##Estimates desired angular velocity from quaternion differences
 
 
 ###############################

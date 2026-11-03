@@ -89,3 +89,13 @@ TAGS
 
 # VSCode's meta files
 **/.vscode/**
+# AstroNav exclusions
+**/Logs/
+*.log
+*.bak
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+*.pyc
+.venv/
+.env
